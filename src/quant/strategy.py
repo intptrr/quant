@@ -25,9 +25,10 @@ class FixedWeights(BaseModel):
 
     def targets(self, prices: pl.DataFrame) -> pl.DataFrame:
         weights = pl.DataFrame({"symbol": self.symbols, "weight": list(self.weights.values())})
+        held = prices.select("date", "symbol").join(weights, on="symbol")
+        start = held.group_by("symbol").agg(pl.col("date").min())["date"].max()
         return (
-            prices.select("date", "symbol")
-            .join(weights, on="symbol")
+            held.filter(pl.col("date") >= start)
             .with_columns((pl.col("weight").abs() * self.rebalance_band).alias("band"))
             .sort("date", "symbol")
         )

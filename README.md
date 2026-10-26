@@ -35,11 +35,11 @@ rebalance_band = 0.0
 SPY = 1.0
 ```
 
-Weights are fractions of equity: negative weights are shorts, and weights adding up to more than 1 borrow cash. A
-position trades only when its weight leaves its band, `rebalance_band` times its target weight on either side, and
-then only back to the nearest edge. With a band of 0.1, a 100% SPY target holds anything from 90% to 110%, and starting
-from cash it buys 90%. With a band of 0, positions go back to their targets whenever the order is at least
-`min_order_value` (`configs/trading.toml`).
+Weights are fractions of equity: negative weights are shorts, and weights adding up to more than 1 borrow cash. The
+portfolio starts trading once every symbol has a price. A position trades only when its weight leaves its band,
+`rebalance_band` times its target weight on either side, and then only back to the nearest edge. With a band of 0.1, a
+100% SPY target holds anything from 90% to 110%, and starting from cash it buys 90%. With a band of 0, positions go
+back to their targets whenever the order is at least `min_order_value` (`configs/trading.toml`).
 
 ## Backtest
 

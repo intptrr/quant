@@ -28,11 +28,11 @@ def test_targets_hold_the_weights_every_day_with_a_band_proportional_to_each() -
     assert targets["band"].to_list() == pytest.approx([0.06, 0.04] * 3)
 
 
-def test_each_symbol_gets_targets_from_its_first_price_and_others_get_none() -> None:
+def test_the_portfolio_starts_once_every_symbol_has_a_price() -> None:
     prices = pl.concat(
         [
             with_symbol(make_bars([100.0] * 3), "A"),
-            with_symbol(make_bars([10.0], start=date(2024, 1, 4)), "B"),
+            with_symbol(make_bars([10.0] * 2, start=date(2024, 1, 3)), "B"),
             with_symbol(make_bars([400.0] * 3), "SPY"),
         ]
     )
@@ -40,8 +40,8 @@ def test_each_symbol_gets_targets_from_its_first_price_and_others_get_none() -> 
     targets = FixedWeights(weights={"A": 0.5, "B": 0.5}).targets(prices)
 
     assert targets.select("date", "symbol").rows() == [
-        (date(2024, 1, 2), "A"),
         (date(2024, 1, 3), "A"),
+        (date(2024, 1, 3), "B"),
         (date(2024, 1, 4), "A"),
         (date(2024, 1, 4), "B"),
     ]
