@@ -1,0 +1,5 @@
+rebalance_band = 0.0
+
+[weights]
+SPY = 0.6
+IEF = 0.4
