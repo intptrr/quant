@@ -1,4 +1,4 @@
-# quant
+# Quant
 
 A personal system for US ETF portfolios: daily data, a backtest, and paper trading at the opening auction through
 IBKR or Alpaca. A strategy turns prices into target weights; paper trading runs a 60/40 SPY/IEF portfolio.
