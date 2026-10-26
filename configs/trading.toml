@@ -1,0 +1,24 @@
+broker = "ibkr"
+capital = 100000
+min_order_value = 1000
+max_order_fraction = 1.0
+max_price_deviation = 0.10
+max_drawdown = 0.25
+slippage_bps = 3.0
+
+[brokers.ibkr]
+borrow_fee = 0.005
+margin_spread = 0.015
+cash_spread = 0.005
+cash_threshold = 10000
+full_rate_nav = 100000
+commission_per_share = 0.0035
+commission_minimum = 0.35
+commission_maximum = 0.01
+fees_per_share = 0.0017
+sale_fee_rate = 0.0000206
+
+[brokers.alpaca]
+borrow_fee = 0.0
+margin_spread = 0.026
+sale_fee_rate = 0.0000206

@@ -1,0 +1,57 @@
+[project]
+name = "quant"
+version = "0.1.0"
+description = "Daily data, backtests and paper trading for US ETF portfolios"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "alpaca-py>=0.44.0",
+    "exchange-calendars>=4.13.2",
+    "httpx>=0.28.1",
+    "ib-async>=2.1.0",
+    "numpy>=2.5.4",
+    "polars>=2.0.0",
+    "pydantic>=2.14.1",
+    "pydantic-settings>=2.16.1",
+    "typer>=0.27.3",
+]
+
+[project.scripts]
+quant = "quant.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11.17,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.414",
+    "pytest>=9.1.1",
+    "ruff>=0.17.2",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "N", "PTH", "DTZ", "C4", "PIE", "RET"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/test_ibkr.py" = ["N802", "N803"]
+
+[tool.pyright]
+include = ["src", "tests"]
+extraPaths = ["tests"]
+pythonVersion = "3.14"
+typeCheckingMode = "standard"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = ["-ra", "--strict-markers"]
+filterwarnings = [
+    "error",
+    "ignore:Series.values returning an ndarray:pandas.errors.Pandas4Warning",
+    "ignore:websockets.legacy is deprecated:DeprecationWarning",
+]
