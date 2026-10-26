@@ -17,6 +17,13 @@ def test_the_project_portfolio_is_spy_buy_and_hold() -> None:
     assert strategy.weights == {"SPY": 1.0}
 
 
+@pytest.mark.parametrize(
+    "path", sorted((PROJECT / "configs" / "candidates").glob("*.toml")), ids=lambda path: path.stem
+)
+def test_candidate_portfolios_load(path: Path) -> None:
+    assert load_strategy(path).symbols
+
+
 def test_targets_hold_the_weights_every_day_with_a_band_proportional_to_each() -> None:
     prices = make_prices({"A": [100.0] * 3, "B": [50.0] * 3})
 
