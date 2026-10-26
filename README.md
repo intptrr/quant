@@ -13,15 +13,17 @@ cp .env.example .env   # add SHARADAR_API_KEY, plus the Alpaca keys for paper tr
 ## Commands
 
 ```bash
-uv run quant data sync                    # daily bars for the portfolio and SPY, the Fed funds rate, quality checks; --full re-downloads
-uv run quant data check                   # quality checks only
-uv run quant backtest                     # backtest the portfolio against SPY buy-and-hold; --output DIR saves the details
-uv run quant backtest --split 2016-01-04  # also report the periods before (in sample) and from (out of sample) a date
-uv run quant paper check                  # broker connection, account and market data
-uv run quant paper pre-open --dry-run     # orders for the next opening auction, nothing submitted
+uv run quant data sync                           # daily bars for the portfolio and SPY, the Fed funds rate, quality checks; --full re-downloads
+uv run quant data check                          # quality checks only
+uv run quant backtest                            # backtest the portfolio against SPY buy-and-hold, in sample only
+uv run quant backtest configs/candidates/*.toml  # compare several strategies in one table; --output DIR saves the details
+uv run quant backtest --final                    # also show the out-of-sample period, once a strategy is chosen
+uv run quant paper check                         # broker connection, account and market data
+uv run quant paper pre-open --dry-run            # orders for the next opening auction, nothing submitted
 ```
 
-Commands read `configs/portfolio.toml` and `configs/trading.toml` unless `--strategy` or `--trading` points elsewhere.
+`backtest` takes strategy configs as arguments; the other commands take one with `--strategy`. Both default to
+`configs/portfolio.toml`, and every command reads `configs/trading.toml` unless `--trading` points elsewhere.
 
 ## Strategy
 
@@ -52,9 +54,14 @@ dividends. The costs come from `configs/trading.toml`:
 - interest: borrowed cash pays the Fed funds rate plus the broker's margin spread, and idle cash above the broker's
   threshold earns the Fed funds rate minus its spread.
 
-The report compares the portfolio with SPY buy-and-hold (dividends reinvested, no costs) over their common period:
-CAGR, volatility, Sharpe ratio (of returns above the Fed funds rate) and maximum drawdown, the portfolio's average
-leverage, turnover and costs, and yearly returns.
+The report compares the strategies with SPY buy-and-hold (dividends reinvested, no costs) over the period they all
+cover: CAGR, volatility, Sharpe ratio (of returns above the Fed funds rate) and maximum drawdown, each strategy's
+average leverage, turnover and costs, and yearly returns.
+
+Research keeps the years from 2016-01-04 on (`OUT_OF_SAMPLE_START` in `src/quant/cli.py`) as an out-of-sample period.
+`quant backtest` only runs on the prices before that date, so strategies are developed and compared without seeing
+those years. `--final` adds the full and out-of-sample periods, for one check of a chosen strategy. Candidate
+portfolios live in `configs/candidates/` and are committed before they are run.
 
 ## Paper trading
 
@@ -76,6 +83,7 @@ Orders go to the opening auction through IBKR (the default) or Alpaca, chosen in
 | Path | Contents |
 |---|---|
 | `configs/portfolio.toml` | Target weights and rebalance band |
+| `configs/candidates/` | Candidate portfolios being researched |
 | `configs/trading.toml` | Broker, account size, costs, minimum order and risk limits |
 | `src/quant/strategy.py` | Strategy interface and the fixed-weight strategy |
 | `src/quant/data` | Sharadar and FRED downloads, Parquet storage, adjustment, quality checks, incremental sync |

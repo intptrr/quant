@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -26,19 +27,24 @@ def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> BarStore:
     return BarStore(tmp_path / "data")
 
 
-def write_portfolio(weights: str) -> Path:
-    path = Path("portfolio.toml")
+def write_portfolio(weights: str, name: str = "portfolio") -> Path:
+    path = Path(f"{name}.toml")
     path.write_text(f"[weights]\n{weights}\n")
     return path
 
 
-def write_history(store: BarStore, *symbols: str) -> None:
+def write_history(store: BarStore, *symbols: str, start: date = date(2015, 1, 2)) -> None:
     for seed, symbol in enumerate(symbols):
-        store.write("sharadar", symbol, make_bars(random_walk(seed, 400, drift=0.0003)))
+        bars = make_bars(random_walk(seed, 400, drift=0.0003), start=start)
+        store.write("sharadar", symbol, bars)
 
 
-def backtest(*options: str) -> list[str]:
-    return ["backtest", "--strategy", str(PORTFOLIO), "--trading", str(TRADING), *options]
+def backtest(*arguments: str) -> list[str]:
+    return ["backtest", *arguments, "--trading", str(TRADING)]
+
+
+def plain(output: str) -> str:
+    return " ".join(output.replace("│", " ").split())
 
 
 def test_check_passes_with_only_warnings(store: BarStore) -> None:
@@ -110,53 +116,70 @@ def test_sync_downloads_bars_and_rates_then_checks_them(
     assert bars is not None and bars.height == 2
 
 
-def test_backtest_compares_the_strategy_with_spy(store: BarStore) -> None:
+def test_backtest_compares_strategies_with_spy_in_sample_only(store: BarStore) -> None:
     write_history(store, "SPY", "IEF")
-    portfolio = write_portfolio("SPY = 0.6\nIEF = 0.4")
+    balanced = write_portfolio("SPY = 0.6\nIEF = 0.4", "balanced")
+    stocks = write_portfolio("SPY = 1.0", "stocks")
 
-    result = runner.invoke(
-        app,
-        [
-            "backtest",
-            "--strategy",
-            str(portfolio),
-            "--trading",
-            str(TRADING),
-            "--output",
-            "results",
-        ],
-    )
+    result = runner.invoke(app, backtest(str(balanced), str(stocks)))
 
     assert result.exit_code == 0, result.output
-    title, header, strategy, benchmark, *_ = result.output.splitlines()
-    assert title.startswith("Full period: 2024-01-03 to ")
+    title, header, *rows = result.output.split("\n\n")[0].splitlines()
+    assert title == "In sample: 2015-01-05 to 2015-12-31"
     assert header.split() == ["Portfolio", "CAGR", "Vol", "Sharpe", "MaxDD"]
-    assert strategy.startswith("portfolio ")
-    assert benchmark.startswith("SPY buy & hold ")
+    assert [row.split()[0] for row in rows] == ["balanced", "stocks", "SPY"]
     assert "correlation to SPY" in result.output
-    assert sorted(path.name for path in Path("results").iterdir()) == [
-        "daily.parquet",
-        "positions.parquet",
+    assert "Out of sample" not in result.output
+    assert result.output.rstrip().endswith(
+        "Results from 2016-01-04 on are hidden; add --final to see them."
+    )
+
+
+def test_backtest_final_adds_the_full_and_out_of_sample_periods(store: BarStore) -> None:
+    write_history(store, "SPY")
+
+    result = runner.invoke(app, backtest(str(PORTFOLIO), "--final"))
+
+    assert result.exit_code == 0, result.output
+    titles = [section.splitlines()[0] for section in result.output.split("\n\n")]
+    assert titles[0].startswith("Full period: 2015-01-05 to 2016-")
+    assert titles[1] == "In sample: 2015-01-05 to 2015-12-31"
+    assert titles[2].startswith("Out of sample: 2016-01-04 to 2016-")
+    assert "hidden" not in result.output
+
+
+def test_backtest_writes_each_strategys_results(store: BarStore) -> None:
+    write_history(store, "SPY")
+
+    result = runner.invoke(app, backtest(str(PORTFOLIO), "--output", "results"))
+
+    assert result.exit_code == 0, result.output
+    assert sorted(
+        path.relative_to("results").as_posix() for path in Path("results").rglob("*.*")
+    ) == [
+        "portfolio/daily.parquet",
+        "portfolio/positions.parquet",
     ]
 
 
-def test_backtest_can_split_in_and_out_of_sample(store: BarStore) -> None:
-    write_history(store, "SPY")
+def test_strategies_without_in_sample_prices_are_rejected(store: BarStore) -> None:
+    write_history(store, "SPY", start=date(2016, 2, 1))
 
-    result = runner.invoke(app, backtest("--split", "2025-01-02"))
-
-    assert result.exit_code == 0, result.output
-    assert "In sample: 2024-01-03 to 2024-12-31" in result.output
-    assert "Out of sample: 2025-01-02 to " in result.output
-
-
-def test_the_split_must_fall_inside_the_backtest(store: BarStore) -> None:
-    write_history(store, "SPY")
-
-    result = runner.invoke(app, backtest("--split", "2030-01-02"))
+    result = runner.invoke(app, backtest(str(write_portfolio("SPY = 1.0"))))
 
     assert result.exit_code == 2
-    assert "must fall inside the backtest period" in result.output
+    assert "portfolio.toml has no prices before 2016-01-04" in plain(result.output)
+
+
+def test_strategy_file_names_must_differ(store: BarStore) -> None:
+    for folder in ("a", "b"):
+        Path(folder).mkdir()
+        Path(folder, "portfolio.toml").write_text("[weights]\nSPY = 1.0\n")
+
+    result = runner.invoke(app, backtest("a/portfolio.toml", "b/portfolio.toml"))
+
+    assert result.exit_code == 2
+    assert "strategy file names must differ" in plain(result.output)
 
 
 def test_paper_reports_needing_attention_fail_the_command(

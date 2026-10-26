@@ -1,10 +1,11 @@
 import logging
 from collections.abc import Callable
 from contextlib import closing
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Annotated
 
+import polars as pl
 import typer
 
 from quant.analytics.report import (
@@ -12,12 +13,12 @@ from quant.analytics.report import (
     benchmark_returns,
     common_period,
     format_period,
-    format_profile,
+    format_profiles,
     format_yearly,
     split_at,
     yearly_returns,
 )
-from quant.backtest.run import run_backtest, trading_days
+from quant.backtest.run import BacktestResult, run_backtest, trading_days
 from quant.core.calendar import last_closed_session, new_york_today
 from quant.core.trading import BrokerName, TradingConfig, load_trading_config
 from quant.data.prices import load_adjusted
@@ -46,6 +47,7 @@ from quant.strategy import load_strategy
 DEFAULT_STRATEGY = Path("configs/portfolio.toml")
 DEFAULT_TRADING = Path("configs/trading.toml")
 BENCHMARK_LABEL = f"{BENCHMARK} buy & hold"
+OUT_OF_SAMPLE_START = date(2016, 1, 4)
 STATE_DIR = Path("state")
 
 app = typer.Typer(no_args_is_help=True, add_completion=False, pretty_exceptions_show_locals=False)
@@ -58,6 +60,12 @@ app.add_typer(paper_app, name="paper")
 
 StrategyOption = Annotated[
     Path, typer.Option("--strategy", "-s", help="Strategy config: target weights and band.")
+]
+StrategiesArgument = Annotated[
+    list[Path] | None,
+    typer.Argument(
+        help="Strategy configs to compare (default: configs/portfolio.toml).", show_default=False
+    ),
 ]
 TradingOption = Annotated[
     Path, typer.Option("--trading", "-t", help="Trading config: broker, capital, costs, limits.")
@@ -113,52 +121,67 @@ def data_check(strategy: StrategyOption = DEFAULT_STRATEGY, symbols: SymbolsOpti
 
 @app.command("backtest")
 def backtest(
-    strategy: StrategyOption = DEFAULT_STRATEGY,
+    strategies: StrategiesArgument = None,
     trading: TradingOption = DEFAULT_TRADING,
-    split: Annotated[
-        datetime | None,
+    final: Annotated[
+        bool,
         typer.Option(
-            formats=DATE_FORMATS,
-            help="Also report before (in sample) and from (out of sample) this date.",
+            "--final", help=f"Also show the results from {OUT_OF_SAMPLE_START} on (out of sample)."
         ),
-    ] = None,
+    ] = False,
     output: Annotated[
-        Path | None, typer.Option(help="Write daily and position parquet files here.")
+        Path | None, typer.Option(help="Write each strategy's daily results and positions here.")
     ] = None,
 ) -> None:
-    """Backtest the strategy against SPY buy-and-hold."""
+    """Backtest strategies against SPY buy-and-hold, in sample only unless --final."""
+    paths = strategies or [DEFAULT_STRATEGY]
+    if len({path.stem for path in paths}) < len(paths):
+        raise typer.BadParameter("strategy file names must differ", param_hint="STRATEGIES")
     settings = Settings()
-    portfolio = load_strategy(strategy)
-    prices = load_adjusted(
-        BarStore(settings.data_dir), SHARADAR, _with_benchmark(portfolio.symbols)
-    )
+    store = BarStore(settings.data_dir)
+    config = load_trading_config(trading)
     rates = RateStore(settings.data_dir).read()
-    result = run_backtest(prices, portfolio.targets(prices), load_trading_config(trading), rates)
-    daily = trading_days(result.daily)
+    results: dict[str, BacktestResult] = {}
+    for path in paths:
+        strategy = load_strategy(path)
+        prices = _period(load_adjusted(store, SHARADAR, strategy.symbols), final=final)
+        targets = strategy.targets(prices)
+        if targets.is_empty():
+            period = "" if final else f" before {OUT_OF_SAMPLE_START}"
+            raise typer.BadParameter(f"{path} has no prices{period}", param_hint="STRATEGIES")
+        results[path.stem] = run_backtest(prices, targets, config, rates)
+    dailies = {name: trading_days(result.daily) for name, result in results.items()}
+    benchmark = benchmark_returns(_period(load_adjusted(store, SHARADAR, [BENCHMARK]), final=final))
     portfolios = common_period(
-        {
-            strategy.stem: daily.select("date", "return"),
-            BENCHMARK_LABEL: benchmark_returns(prices),
-        }
+        {name: daily.select("date", "return") for name, daily in dailies.items()}
+        | {BENCHMARK_LABEL: benchmark}
     )
-    sections = [format_period("Full period", portfolios, rates)]
-    if split is not None:
-        before, after = split_at(portfolios, split.date())
-        if any(frame.is_empty() for frame in (*before.values(), *after.values())):
-            raise typer.BadParameter("must fall inside the backtest period", param_hint="--split")
-        sections += [
-            format_period("In sample", before, rates),
-            format_period("Out of sample", after, rates),
-        ]
+    sections = [format_period("Full period" if final else "In sample", portfolios, rates)]
+    if final:
+        parts = split_at(portfolios, OUT_OF_SAMPLE_START)
+        for title, part in zip(("In sample", "Out of sample"), parts, strict=True):
+            if all(frame.height for frame in part.values()):
+                sections.append(format_period(title, part, rates))
+    dates = portfolios[BENCHMARK_LABEL]["date"]
+    within = pl.col("date").is_between(dates[0], dates[-1])
     sections += [
-        format_profile(daily, portfolios[BENCHMARK_LABEL]),
+        format_profiles(
+            {name: daily.filter(within) for name, daily in dailies.items()},
+            portfolios[BENCHMARK_LABEL],
+        ),
         format_yearly(yearly_returns(portfolios)),
     ]
+    if not final:
+        sections.append(
+            f"Results from {OUT_OF_SAMPLE_START} on are hidden; add --final to see them."
+        )
     typer.echo("\n\n".join(sections))
     if output is not None:
-        output.mkdir(parents=True, exist_ok=True)
-        result.daily.write_parquet(output / "daily.parquet")
-        result.positions.write_parquet(output / "positions.parquet")
+        for name, result in results.items():
+            folder = output / name
+            folder.mkdir(parents=True, exist_ok=True)
+            result.daily.write_parquet(folder / "daily.parquet")
+            result.positions.write_parquet(folder / "positions.parquet")
 
 
 @paper_app.command("check")
@@ -285,6 +308,10 @@ def _symbols(strategy: Path, symbols: list[str] | None) -> list[str]:
 
 def _with_benchmark(symbols: list[str]) -> list[str]:
     return list(dict.fromkeys([*symbols, BENCHMARK]))
+
+
+def _period(frame: pl.DataFrame, *, final: bool) -> pl.DataFrame:
+    return frame if final else frame.filter(pl.col("date") < OUT_OF_SAMPLE_START)
 
 
 def _report(issues: list[Issue]) -> None:

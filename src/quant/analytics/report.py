@@ -89,6 +89,14 @@ def format_yearly(yearly: pl.DataFrame) -> str:
     return "\n".join(lines)
 
 
+def format_profiles(dailies: Mapping[str, pl.DataFrame], benchmark: pl.DataFrame) -> str:
+    width = max(len(name) for name in dailies)
+    return "\n".join(
+        f"{name.ljust(width)}  {format_profile(daily, benchmark)}"
+        for name, daily in dailies.items()
+    )
+
+
 def format_profile(daily: pl.DataFrame, benchmark: pl.DataFrame) -> str:
     correlation = (
         daily.select("date", "return")

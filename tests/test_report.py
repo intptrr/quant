@@ -8,6 +8,7 @@ from quant.analytics.report import (
     benchmark_returns,
     common_period,
     format_period,
+    format_profiles,
     split_at,
     yearly_returns,
 )
@@ -68,3 +69,18 @@ def test_a_period_has_a_title_line_and_one_aligned_row_per_portfolio() -> None:
     assert first.startswith("portfolio ")
     assert second.startswith("SPY buy & hold")
     assert len({len(header), len(first), len(second)}) == 1
+
+
+def test_profiles_have_one_aligned_line_per_strategy() -> None:
+    profile = daily(2, 9).with_columns(
+        gross_leverage=pl.lit(1.5), net_leverage=pl.lit(1.5), turnover=pl.lit(0.0), cost=pl.lit(0.0)
+    )
+
+    text = format_profiles({"a": profile, "long-name": profile}, daily(2, 9))
+
+    assert text.splitlines() == [
+        "a          avg gross 1.50x, avg net +1.50x, turnover 0.0x/yr, costs 0.00%/yr, "
+        "correlation to SPY +1.00",
+        "long-name  avg gross 1.50x, avg net +1.50x, turnover 0.0x/yr, costs 0.00%/yr, "
+        "correlation to SPY +1.00",
+    ]
