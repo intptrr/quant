@@ -45,9 +45,17 @@ def test_the_sharpe_ratio_of_flat_returns_is_nan() -> None:
 
 
 def test_summary_reports_every_metric() -> None:
-    summary = metrics.summarize(ALTERNATING)
+    summary = metrics.summarize(ALTERNATING, np.zeros(ALTERNATING.size))
 
     assert summary.cagr == pytest.approx(metrics.cagr(ALTERNATING))
     assert summary.volatility == pytest.approx(metrics.annualized_volatility(ALTERNATING))
     assert summary.sharpe == pytest.approx(metrics.sharpe_ratio(ALTERNATING))
     assert summary.max_drawdown == pytest.approx(metrics.max_drawdown(ALTERNATING))
+
+
+def test_the_summary_sharpe_ratio_is_measured_above_the_risk_free_rate() -> None:
+    summary = metrics.summarize(ALTERNATING, np.full(ALTERNATING.size, 0.001))
+
+    assert summary.sharpe == pytest.approx(metrics.sharpe_ratio(ALTERNATING - 0.001))
+    assert summary.sharpe < metrics.sharpe_ratio(ALTERNATING)
+    assert summary.cagr == pytest.approx(metrics.cagr(ALTERNATING))

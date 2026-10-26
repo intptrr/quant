@@ -53,8 +53,8 @@ dividends. The costs come from `configs/trading.toml`:
   threshold earns the Fed funds rate minus its spread.
 
 The report compares the portfolio with SPY buy-and-hold (dividends reinvested, no costs) over their common period:
-CAGR, volatility, Sharpe ratio and maximum drawdown, the portfolio's average leverage, turnover and costs, and yearly
-returns.
+CAGR, volatility, Sharpe ratio (of returns above the Fed funds rate) and maximum drawdown, the portfolio's average
+leverage, turnover and costs, and yearly returns.
 
 ## Paper trading
 

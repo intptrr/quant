@@ -132,12 +132,8 @@ def backtest(
     prices = load_adjusted(
         BarStore(settings.data_dir), SHARADAR, _with_benchmark(portfolio.symbols)
     )
-    result = run_backtest(
-        prices,
-        portfolio.targets(prices),
-        load_trading_config(trading),
-        RateStore(settings.data_dir).read(),
-    )
+    rates = RateStore(settings.data_dir).read()
+    result = run_backtest(prices, portfolio.targets(prices), load_trading_config(trading), rates)
     daily = trading_days(result.daily)
     portfolios = common_period(
         {
@@ -145,12 +141,15 @@ def backtest(
             BENCHMARK_LABEL: benchmark_returns(prices),
         }
     )
-    sections = [format_period("Full period", portfolios)]
+    sections = [format_period("Full period", portfolios, rates)]
     if split is not None:
         before, after = split_at(portfolios, split.date())
         if any(frame.is_empty() for frame in (*before.values(), *after.values())):
             raise typer.BadParameter("must fall inside the backtest period", param_hint="--split")
-        sections += [format_period("In sample", before), format_period("Out of sample", after)]
+        sections += [
+            format_period("In sample", before, rates),
+            format_period("Out of sample", after, rates),
+        ]
     sections += [
         format_profile(daily, portfolios[BENCHMARK_LABEL]),
         format_yearly(yearly_returns(portfolios)),

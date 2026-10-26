@@ -2,7 +2,7 @@ from datetime import date
 
 import polars as pl
 import pytest
-from factories import make_bars, with_symbol
+from factories import flat_rates, make_bars, with_symbol
 
 from quant.analytics.report import (
     benchmark_returns,
@@ -58,7 +58,9 @@ def test_yearly_returns_compound_within_each_year() -> None:
 
 
 def test_a_period_has_a_title_line_and_one_aligned_row_per_portfolio() -> None:
-    text = format_period("Full period", {"portfolio": daily(2, 9), "SPY buy & hold": daily(2, 9)})
+    returns = {"portfolio": daily(2, 9), "SPY buy & hold": daily(2, 9)}
+
+    text = format_period("Full period", returns, flat_rates(0.04))
 
     title, header, first, second = text.splitlines()
     assert title == "Full period: 2024-01-02 to 2024-01-09"

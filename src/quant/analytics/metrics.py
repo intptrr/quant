@@ -17,12 +17,12 @@ class PerformanceSummary:
     max_drawdown: float
 
 
-def summarize(returns: npt.ArrayLike) -> PerformanceSummary:
-    values = clean(returns)
+def summarize(returns: npt.ArrayLike, risk_free: npt.ArrayLike) -> PerformanceSummary:
+    values = np.asarray(returns, dtype=np.float64)
     return PerformanceSummary(
         cagr=cagr(values),
         volatility=annualized_volatility(values),
-        sharpe=sharpe_ratio(values),
+        sharpe=sharpe_ratio(values - np.asarray(risk_free, dtype=np.float64)),
         max_drawdown=max_drawdown(values),
     )
 

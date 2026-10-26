@@ -5,6 +5,7 @@ from datetime import date
 import polars as pl
 
 from quant.analytics.metrics import TRADING_DAYS, summarize
+from quant.data.rates import rates_on
 
 BENCHMARK = "SPY"
 METRICS: tuple[tuple[str, str, str], ...] = (
@@ -54,12 +55,13 @@ def yearly_returns(returns: Mapping[str, pl.DataFrame]) -> pl.DataFrame:
     return joined.sort("year")
 
 
-def format_period(title: str, returns: Mapping[str, pl.DataFrame]) -> str:
+def format_period(title: str, returns: Mapping[str, pl.DataFrame], rates: pl.DataFrame) -> str:
     dates = next(iter(returns.values()))["date"]
     headers = ["Portfolio", *(label for label, _, _ in METRICS)]
     rows = []
     for name, frame in returns.items():
-        summary = asdict(summarize(frame["return"]))
+        cash = rates_on(frame["date"], rates) / TRADING_DAYS
+        summary = asdict(summarize(frame["return"], cash))
         rows.append([name, *(format(summary[field], spec) for _, field, spec in METRICS)])
     widths = [max(len(cell) for cell in column) for column in zip(headers, *rows, strict=True)]
     table = [
