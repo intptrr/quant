@@ -53,6 +53,7 @@ class TradingConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     broker: BrokerName = BrokerName.IBKR
+    strategy: str = Field(default="spy", min_length=1)
     capital: float = Field(default=100_000.0, gt=0)
     min_order_value: float = Field(default=0.0, ge=0)
     max_order_fraction: float = Field(default=0.75, gt=0)

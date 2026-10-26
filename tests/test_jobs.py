@@ -23,7 +23,7 @@ from quant.live.jobs import (
     upcoming_session,
 )
 from quant.live.state import OrderRecord, StateStore
-from quant.strategy import FixedWeights
+from quant.strategies.fixed import FixedWeights
 
 STRATEGY = FixedWeights(weights={"EQ1": 0.5, "EQ2": 0.4, "BND": -0.3, "GLD": 0.2})
 TRADING = trading_with(

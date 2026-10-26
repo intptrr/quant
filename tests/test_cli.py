@@ -10,10 +10,9 @@ from typer.testing import CliRunner
 from quant.cli import app
 from quant.data.rates import RateStore
 from quant.data.store import BarStore
-from quant.live.jobs import JobReport
+from quant.live.jobs import Desk, JobReport
 
 PROJECT = Path(__file__).parents[1]
-PORTFOLIO = PROJECT / "configs" / "portfolio.toml"
 TRADING = PROJECT / "configs" / "trading.toml"
 runner = CliRunner()
 
@@ -27,10 +26,11 @@ def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> BarStore:
     return BarStore(tmp_path / "data")
 
 
-def write_portfolio(weights: str, name: str = "portfolio") -> Path:
-    path = Path(f"{name}.toml")
-    path.write_text(f"[weights]\n{weights}\n")
-    return path
+def write_strategies(**weights: str) -> None:
+    folder = Path("configs/strategies")
+    folder.mkdir(parents=True)
+    sections = [f"[{name}]\nweights = {{ {weight} }}\n" for name, weight in weights.items()]
+    (folder / "fixed.toml").write_text("\n".join(sections))
 
 
 def write_history(store: BarStore, *symbols: str, start: date = date(2015, 1, 2)) -> None:
@@ -66,10 +66,10 @@ def test_check_fails_on_errors(store: BarStore) -> None:
     assert "error   SPY    non_positive_price" in result.output
 
 
-def test_check_covers_the_portfolio_and_the_benchmark(store: BarStore) -> None:
-    portfolio = write_portfolio("QQQ = 0.6\nIEF = 0.4")
+def test_check_covers_the_strategies_and_the_benchmark(store: BarStore) -> None:
+    write_strategies(qqq="QQQ = 1.0", ief="IEF = 1.0")
 
-    result = runner.invoke(app, ["data", "check", "--strategy", str(portfolio)])
+    result = runner.invoke(app, ["data", "check"])
 
     assert result.exit_code == 1
     missing = [line.split()[1] for line in result.output.splitlines() if " missing " in line]
@@ -118,10 +118,9 @@ def test_sync_downloads_bars_and_rates_then_checks_them(
 
 def test_backtest_compares_strategies_with_spy_in_sample_only(store: BarStore) -> None:
     write_history(store, "SPY", "IEF")
-    balanced = write_portfolio("SPY = 0.6\nIEF = 0.4", "balanced")
-    stocks = write_portfolio("SPY = 1.0", "stocks")
+    write_strategies(balanced="SPY = 0.6, IEF = 0.4", stocks="SPY = 1.0", bonds="IEF = 1.0")
 
-    result = runner.invoke(app, backtest(str(balanced), str(stocks)))
+    result = runner.invoke(app, backtest("balanced", "stocks"))
 
     assert result.exit_code == 0, result.output
     title, header, *rows = result.output.split("\n\n")[0].splitlines()
@@ -137,8 +136,9 @@ def test_backtest_compares_strategies_with_spy_in_sample_only(store: BarStore) -
 
 def test_backtest_final_adds_the_full_and_out_of_sample_periods(store: BarStore) -> None:
     write_history(store, "SPY")
+    write_strategies(spy="SPY = 1.0")
 
-    result = runner.invoke(app, backtest(str(PORTFOLIO), "--final"))
+    result = runner.invoke(app, backtest("--final"))
 
     assert result.exit_code == 0, result.output
     titles = [section.splitlines()[0] for section in result.output.split("\n\n")]
@@ -149,37 +149,58 @@ def test_backtest_final_adds_the_full_and_out_of_sample_periods(store: BarStore)
 
 
 def test_backtest_writes_each_strategys_results(store: BarStore) -> None:
-    write_history(store, "SPY")
+    write_history(store, "SPY", "IEF")
+    write_strategies(spy="SPY = 1.0", ief="IEF = 1.0")
 
-    result = runner.invoke(app, backtest(str(PORTFOLIO), "--output", "results"))
+    result = runner.invoke(app, backtest("--output", "results"))
 
     assert result.exit_code == 0, result.output
     assert sorted(
         path.relative_to("results").as_posix() for path in Path("results").rglob("*.*")
     ) == [
-        "portfolio/daily.parquet",
-        "portfolio/positions.parquet",
+        "ief/daily.parquet",
+        "ief/positions.parquet",
+        "spy/daily.parquet",
+        "spy/positions.parquet",
     ]
 
 
 def test_strategies_without_in_sample_prices_are_rejected(store: BarStore) -> None:
     write_history(store, "SPY", start=date(2016, 2, 1))
+    write_strategies(spy="SPY = 1.0")
 
-    result = runner.invoke(app, backtest(str(write_portfolio("SPY = 1.0"))))
-
-    assert result.exit_code == 2
-    assert "portfolio.toml has no prices before 2016-01-04" in plain(result.output)
-
-
-def test_strategy_file_names_must_differ(store: BarStore) -> None:
-    for folder in ("a", "b"):
-        Path(folder).mkdir()
-        Path(folder, "portfolio.toml").write_text("[weights]\nSPY = 1.0\n")
-
-    result = runner.invoke(app, backtest("a/portfolio.toml", "b/portfolio.toml"))
+    result = runner.invoke(app, backtest())
 
     assert result.exit_code == 2
-    assert "strategy file names must differ" in plain(result.output)
+    assert "spy has no prices before 2016-01-04" in plain(result.output)
+
+
+def test_backtest_needs_strategies(store: BarStore) -> None:
+    result = runner.invoke(app, backtest())
+
+    assert result.exit_code == 2
+    assert "no strategies in configs/strategies" in plain(result.output)
+
+
+def test_paper_trades_the_strategy_named_in_the_trading_config(
+    store: BarStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_strategies(spy="SPY = 1.0", ief="IEF = 1.0")
+    traded: list[str] = []
+
+    def check(desk: Desk) -> JobReport:
+        traded.extend(desk.strategy.symbols)
+        return JobReport("check", [])
+
+    monkeypatch.setattr("quant.cli._alpaca_keys", lambda settings: ("key", "secret"))
+    monkeypatch.setattr("quant.cli.sharadar_provider", lambda settings: None)
+    monkeypatch.setattr("quant.cli._broker", lambda settings, name: FakeBroker())
+    monkeypatch.setattr("quant.cli.broker_check", check)
+
+    runner.invoke(app, ["paper", "check", "--trading", str(TRADING)])
+    runner.invoke(app, ["paper", "check", "--strategy", "ief", "--trading", str(TRADING)])
+
+    assert traded == ["SPY", "IEF"]
 
 
 def test_paper_reports_needing_attention_fail_the_command(

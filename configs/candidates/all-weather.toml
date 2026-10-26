@@ -1,8 +1,0 @@
-rebalance_band = 0.0
-
-[weights]
-SPY = 0.3
-TLT = 0.4
-IEF = 0.15
-GLD = 0.075
-DBC = 0.075

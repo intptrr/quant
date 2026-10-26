@@ -13,35 +13,46 @@ cp .env.example .env   # add SHARADAR_API_KEY, plus the Alpaca keys for paper tr
 ## Commands
 
 ```bash
-uv run quant data sync                           # daily bars for the portfolio and SPY, the Fed funds rate, quality checks; --full re-downloads
-uv run quant data check                          # quality checks only
-uv run quant backtest                            # backtest the portfolio against SPY buy-and-hold, in sample only
-uv run quant backtest configs/candidates/*.toml  # compare several strategies in one table; --output DIR saves the details
-uv run quant backtest --final                    # also show the out-of-sample period, once a strategy is chosen
-uv run quant paper check                         # broker connection, account and market data
-uv run quant paper pre-open --dry-run            # orders for the next opening auction, nothing submitted
+uv run quant data sync                 # daily bars for every strategy's symbols and SPY, the Fed funds rate, quality checks; --full re-downloads
+uv run quant data check                # quality checks only
+uv run quant backtest                  # compare every strategy with SPY buy-and-hold, in sample only; --output DIR saves the details
+uv run quant backtest 'sixty-*' spy    # only the strategies with these names or patterns
+uv run quant backtest spy --final      # also show the out-of-sample period, once a strategy is chosen
+uv run quant paper check               # broker connection, account and market data
+uv run quant paper pre-open --dry-run  # orders for the next opening auction, nothing submitted
 ```
 
-`backtest` takes strategy configs as arguments; the other commands take one with `--strategy`. Both default to
-`configs/portfolio.toml`, and every command reads `configs/trading.toml` unless `--trading` points elsewhere.
+`data` and `backtest` take strategy names or patterns as arguments and default to all strategies. `paper` commands
+trade the strategy named in `configs/trading.toml` (`strategy = "spy"`) unless `--strategy` names another. Every
+command reads `configs/trading.toml` unless `--trading` points elsewhere.
 
-## Strategy
+## Strategies
 
 A strategy has `symbols` and a `targets(prices)` method that returns a target `weight` and a rebalance `band` for each
-symbol and day (`src/quant/strategy.py`). The only strategy is `FixedWeights`, configured in `configs/portfolio.toml`:
+symbol and day (`Strategy` in `src/quant/strategies/__init__.py`). Each type of strategy is a module in
+`src/quant/strategies/`, and its parameters live in the TOML file of the same name in `configs/strategies/`, one
+table per named variant. Names are unique across files, and a parameter that is missing, unknown or of the wrong type
+fails when the files load.
+
+The only type so far is `fixed` (`FixedWeights`), in `configs/strategies/fixed.toml`:
 
 ```toml
-rebalance_band = 0.0
+[spy]
+weights = { SPY = 1.0 }
 
-[weights]
-SPY = 1.0
+[sixty-forty]
+weights = { SPY = 0.6, IEF = 0.4 }
 ```
+
+A new variant is a new table in that file. A new type is a module in `src/quant/strategies/`, a line in `TYPES` in
+`src/quant/strategies/__init__.py` and a TOML file named after it. Every variant is tested on synthetic prices to
+check that its targets never depend on later prices.
 
 Weights are fractions of equity: negative weights are shorts, and weights adding up to more than 1 borrow cash. The
 portfolio starts trading once every symbol has a price. A position trades only when its weight leaves its band,
-`rebalance_band` times its target weight on either side, and then only back to the nearest edge. With a band of 0.1, a
-100% SPY target holds anything from 90% to 110%, and starting from cash it buys 90%. With a band of 0, positions go
-back to their targets whenever the order is at least `min_order_value` (`configs/trading.toml`).
+`rebalance_band` (default 0) times its target weight on either side, and then only back to the nearest edge. With a
+band of 0.1, a 100% SPY target holds anything from 90% to 110%, and starting from cash it buys 90%. With a band of 0,
+positions go back to their targets whenever the order is at least `min_order_value` (`configs/trading.toml`).
 
 ## Backtest
 
@@ -60,8 +71,9 @@ average leverage, turnover and costs, and yearly returns.
 
 Research keeps the years from 2016-01-04 on (`OUT_OF_SAMPLE_START` in `src/quant/cli.py`) as an out-of-sample period.
 `quant backtest` only runs on the prices before that date, so strategies are developed and compared without seeing
-those years. `--final` adds the full and out-of-sample periods, for one check of a chosen strategy. Candidate
-portfolios live in `configs/candidates/` and are committed before they are run.
+those years. `--final` adds the full and out-of-sample periods, for one check of a chosen strategy. New variants are
+committed before they are run, variants that have run are not edited (a change gets a new name), and rejected ones
+stay in the files, so the history shows what was tried and when.
 
 ## Paper trading
 
@@ -82,10 +94,9 @@ Orders go to the opening auction through IBKR (the default) or Alpaca, chosen in
 
 | Path | Contents |
 |---|---|
-| `configs/portfolio.toml` | Target weights and rebalance band |
-| `configs/candidates/` | Candidate portfolios being researched |
-| `configs/trading.toml` | Broker, account size, costs, minimum order and risk limits |
-| `src/quant/strategy.py` | Strategy interface and the fixed-weight strategy |
+| `configs/strategies/` | Strategy parameters: one file per type, one table per named variant |
+| `configs/trading.toml` | Strategy traded, broker, account size, costs, minimum order and risk limits |
+| `src/quant/strategies` | Strategy interface, the strategy types and the loading of their parameters |
 | `src/quant/data` | Sharadar and FRED downloads, Parquet storage, adjustment, quality checks, incremental sync |
 | `src/quant/backtest` | Daily backtest: targets at the close, fills at the next open, costs by type |
 | `src/quant/analytics` | Performance metrics and the backtest report |

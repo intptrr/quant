@@ -42,9 +42,9 @@ from quant.live.jobs import (
 )
 from quant.live.state import StateStore
 from quant.settings import Settings
-from quant.strategy import load_strategy
+from quant.strategies import Strategy, load_strategies, select
 
-DEFAULT_STRATEGY = Path("configs/portfolio.toml")
+STRATEGIES = Path("configs/strategies")
 DEFAULT_TRADING = Path("configs/trading.toml")
 BENCHMARK_LABEL = f"{BENCHMARK} buy & hold"
 OUT_OF_SAMPLE_START = date(2016, 1, 4)
@@ -59,16 +59,21 @@ app.add_typer(data_app, name="data")
 app.add_typer(paper_app, name="paper")
 
 StrategyOption = Annotated[
-    Path, typer.Option("--strategy", "-s", help="Strategy config: target weights and band.")
+    str | None,
+    typer.Option("--strategy", "-s", help="Strategy to trade (default: the trading config's)."),
 ]
-StrategiesArgument = Annotated[
-    list[Path] | None,
+NamesArgument = Annotated[
+    list[str] | None,
     typer.Argument(
-        help="Strategy configs to compare (default: configs/portfolio.toml).", show_default=False
+        help=f"Strategy names or patterns such as 'sixty-*', from {STRATEGIES} (default: all).",
+        show_default=False,
     ),
 ]
 TradingOption = Annotated[
-    Path, typer.Option("--trading", "-t", help="Trading config: broker, capital, costs, limits.")
+    Path,
+    typer.Option(
+        "--trading", "-t", help="Trading config: strategy, broker, capital, costs, limits."
+    ),
 ]
 BrokerOption = Annotated[
     BrokerName | None,
@@ -82,7 +87,7 @@ DATE_FORMATS = ["%Y-%m-%d"]
 
 @data_app.command("sync")
 def data_sync(
-    strategy: StrategyOption = DEFAULT_STRATEGY,
+    names: NamesArgument = None,
     symbols: SymbolsOption = None,
     full: Annotated[bool, typer.Option(help="Re-download the full history.")] = False,
 ) -> None:
@@ -92,7 +97,7 @@ def data_sync(
     provider = sharadar_provider(settings)
     now = datetime.now(UTC)
     issues: list[Issue] = []
-    for symbol in _symbols(strategy, symbols):
+    for symbol in _symbols(names, symbols):
         result = sync_symbol(store, provider, symbol, new_york_today(now), full=full)
         typer.echo(
             f"{symbol:<6} rows={result.rows:<6} added={result.added:<6} "
@@ -106,14 +111,14 @@ def data_sync(
 
 
 @data_app.command("check")
-def data_check(strategy: StrategyOption = DEFAULT_STRATEGY, symbols: SymbolsOption = None) -> None:
+def data_check(names: NamesArgument = None, symbols: SymbolsOption = None) -> None:
     """Run quality checks on stored bars."""
     store = BarStore(Settings().data_dir)
     expected_last = last_closed_session(datetime.now(UTC))
     _report(
         [
             issue
-            for symbol in _symbols(strategy, symbols)
+            for symbol in _symbols(names, symbols)
             for issue in check_bars(symbol, store.read(SHARADAR, symbol), expected_last)
         ]
     )
@@ -121,7 +126,7 @@ def data_check(strategy: StrategyOption = DEFAULT_STRATEGY, symbols: SymbolsOpti
 
 @app.command("backtest")
 def backtest(
-    strategies: StrategiesArgument = None,
+    names: NamesArgument = None,
     trading: TradingOption = DEFAULT_TRADING,
     final: Annotated[
         bool,
@@ -134,22 +139,21 @@ def backtest(
     ] = None,
 ) -> None:
     """Backtest strategies against SPY buy-and-hold, in sample only unless --final."""
-    paths = strategies or [DEFAULT_STRATEGY]
-    if len({path.stem for path in paths}) < len(paths):
-        raise typer.BadParameter("strategy file names must differ", param_hint="STRATEGIES")
+    strategies = select(load_strategies(STRATEGIES), names or [])
+    if not strategies:
+        raise typer.BadParameter(f"no strategies in {STRATEGIES}", param_hint="NAMES")
     settings = Settings()
     store = BarStore(settings.data_dir)
     config = load_trading_config(trading)
     rates = RateStore(settings.data_dir).read()
     results: dict[str, BacktestResult] = {}
-    for path in paths:
-        strategy = load_strategy(path)
+    for name, strategy in strategies.items():
         prices = _period(load_adjusted(store, SHARADAR, strategy.symbols), final=final)
         targets = strategy.targets(prices)
         if targets.is_empty():
             period = "" if final else f" before {OUT_OF_SAMPLE_START}"
-            raise typer.BadParameter(f"{path} has no prices{period}", param_hint="STRATEGIES")
-        results[path.stem] = run_backtest(prices, targets, config, rates)
+            raise typer.BadParameter(f"{name} has no prices{period}", param_hint="NAMES")
+        results[name] = run_backtest(prices, targets, config, rates)
     dailies = {name: trading_days(result.daily) for name, result in results.items()}
     benchmark = benchmark_returns(_period(load_adjusted(store, SHARADAR, [BENCHMARK]), final=final))
     portfolios = common_period(
@@ -187,7 +191,7 @@ def backtest(
 @paper_app.command("check")
 def paper_check(
     broker: BrokerOption = None,
-    strategy: StrategyOption = DEFAULT_STRATEGY,
+    strategy: StrategyOption = None,
     trading: TradingOption = DEFAULT_TRADING,
 ) -> None:
     """Check the broker connection, account, short availability and market data."""
@@ -200,7 +204,7 @@ def paper_init(
         float | None, typer.Option(help="Starting capital (default: account equity).")
     ] = None,
     broker: BrokerOption = None,
-    strategy: StrategyOption = DEFAULT_STRATEGY,
+    strategy: StrategyOption = None,
     trading: TradingOption = DEFAULT_TRADING,
 ) -> None:
     """Start the shadow ledger; the paper account must have no positions."""
@@ -219,7 +223,7 @@ def paper_pre_open(
     ] = None,
     dry_run: Annotated[bool, typer.Option(help="Plan orders without submitting them.")] = False,
     broker: BrokerOption = None,
-    strategy: StrategyOption = DEFAULT_STRATEGY,
+    strategy: StrategyOption = None,
     trading: TradingOption = DEFAULT_TRADING,
 ) -> None:
     """Sync data, close the ledger, then queue orders for the opening auction."""
@@ -235,7 +239,7 @@ def paper_post_open(
         typer.Option(formats=DATE_FORMATS, help="Trading session (default: today in New York)."),
     ] = None,
     broker: BrokerOption = None,
-    strategy: StrategyOption = DEFAULT_STRATEGY,
+    strategy: StrategyOption = None,
     trading: TradingOption = DEFAULT_TRADING,
 ) -> None:
     """Record opening fills and reconcile positions with the broker."""
@@ -246,7 +250,7 @@ def paper_post_open(
 @paper_app.command("report")
 def paper_report(
     broker: BrokerOption = None,
-    strategy: StrategyOption = DEFAULT_STRATEGY,
+    strategy: StrategyOption = None,
     trading: TradingOption = DEFAULT_TRADING,
 ) -> None:
     """Compare the paper ledger with a backtest replay over the same days."""
@@ -254,10 +258,15 @@ def paper_report(
 
 
 def _run_job(
-    job: Callable[[Desk], JobReport], broker: BrokerName | None, strategy: Path, trading: Path
+    job: Callable[[Desk], JobReport],
+    broker: BrokerName | None,
+    strategy: str | None,
+    trading: Path,
 ) -> None:
     setup = load_trading_config(trading)
-    desk = _desk(Settings(), setup if broker is None else setup.using(broker), strategy)
+    desk = _desk(
+        Settings(), setup if broker is None else setup.using(broker), strategy or setup.strategy
+    )
     with closing(desk.broker):
         report = job(desk)
     typer.echo(report.text)
@@ -265,7 +274,7 @@ def _run_job(
         raise typer.Exit(code=1)
 
 
-def _desk(settings: Settings, trading: TradingConfig, strategy: Path) -> Desk:
+def _desk(settings: Settings, trading: TradingConfig, strategy: str) -> Desk:
     key, secret = _alpaca_keys(settings)
     return Desk(
         bars=BarStore(settings.data_dir),
@@ -274,7 +283,7 @@ def _desk(settings: Settings, trading: TradingConfig, strategy: Path) -> Desk:
         broker=_broker(settings, trading.broker),
         market=AlpacaMarketWatch(key, secret),
         state=StateStore(settings.data_dir / STATE_DIR / f"paper-{trading.broker}.sqlite3"),
-        strategy=load_strategy(strategy),
+        strategy=_strategy(strategy),
         trading=trading,
     )
 
@@ -300,14 +309,19 @@ def _alpaca_keys(settings: Settings) -> tuple[str, str]:
     return settings.alpaca_api_key.get_secret_value(), settings.alpaca_secret_key.get_secret_value()
 
 
-def _symbols(strategy: Path, symbols: list[str] | None) -> list[str]:
+def _strategy(name: str) -> Strategy:
+    strategies = load_strategies(STRATEGIES)
+    if name not in strategies:
+        raise ValueError(f"no strategy named {name} in {STRATEGIES}")
+    return strategies[name]
+
+
+def _symbols(names: list[str] | None, symbols: list[str] | None) -> list[str]:
     if symbols:
         return [symbol.upper() for symbol in symbols]
-    return _with_benchmark(load_strategy(strategy).symbols)
-
-
-def _with_benchmark(symbols: list[str]) -> list[str]:
-    return list(dict.fromkeys([*symbols, BENCHMARK]))
+    strategies = select(load_strategies(STRATEGIES), names or [])
+    held = [symbol for strategy in strategies.values() for symbol in strategy.symbols]
+    return list(dict.fromkeys([*held, BENCHMARK]))
 
 
 def _period(frame: pl.DataFrame, *, final: bool) -> pl.DataFrame:

@@ -70,6 +70,7 @@ def test_the_project_trading_config_loads_both_brokers() -> None:
     trading = load_trading_config(PROJECT / "configs" / "trading.toml")
 
     assert trading.broker is BrokerName.IBKR
+    assert trading.strategy == "spy"
     assert trading.min_order_value == 1_000.0
     assert trading.terms.margin_spread == 0.015
     assert trading.using(BrokerName.ALPACA).terms.margin_spread == 0.026

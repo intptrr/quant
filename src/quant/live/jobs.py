@@ -35,7 +35,7 @@ from quant.live.ledger import Bar, Carry, Fill, LedgerDay, close_day, opening_da
 from quant.live.planner import OrderIntent, Target, below_minimum, plan_orders
 from quant.live.risk import Rejection, screen_orders
 from quant.live.state import OrderRecord, StateStore
-from quant.strategy import Strategy
+from quant.strategies import Strategy
 
 SUBMISSION_OPENS = time(19, 0)
 SUBMISSION_CUTOFF = time(9, 28)

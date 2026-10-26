@@ -1,27 +1,10 @@
 from datetime import date
-from pathlib import Path
 
 import polars as pl
 import pytest
 from factories import make_bars, make_prices, with_symbol
 
-from quant.strategy import FixedWeights, load_strategy
-
-PROJECT = Path(__file__).parents[1]
-
-
-def test_the_project_portfolio_is_spy_buy_and_hold() -> None:
-    strategy = load_strategy(PROJECT / "configs" / "portfolio.toml")
-
-    assert strategy.symbols == ["SPY"]
-    assert strategy.weights == {"SPY": 1.0}
-
-
-@pytest.mark.parametrize(
-    "path", sorted((PROJECT / "configs" / "candidates").glob("*.toml")), ids=lambda path: path.stem
-)
-def test_candidate_portfolios_load(path: Path) -> None:
-    assert load_strategy(path).symbols
+from quant.strategies.fixed import FixedWeights
 
 
 def test_targets_hold_the_weights_every_day_with_a_band_proportional_to_each() -> None:
@@ -54,7 +37,7 @@ def test_the_portfolio_starts_once_every_symbol_has_a_price() -> None:
     ]
 
 
-def test_a_strategy_needs_weights_and_rejects_unknown_keys() -> None:
+def test_weights_are_required_and_unknown_parameters_rejected() -> None:
     with pytest.raises(ValueError, match="too_short"):
         FixedWeights(weights={})
     with pytest.raises(ValueError, match="extra_forbidden"):

@@ -1,6 +1,0 @@
-rebalance_band = 0.0
-
-[weights]
-SPY = 0.25
-TLT = 0.25
-GLD = 0.25

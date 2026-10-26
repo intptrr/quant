@@ -1,0 +1,17 @@
+[spy]
+weights = { SPY = 1.0 }
+
+[sixty-forty]
+weights = { SPY = 0.6, IEF = 0.4 }
+
+[sixty-forty-levered]
+weights = { SPY = 0.9, IEF = 0.6 }
+
+[permanent]
+weights = { SPY = 0.25, TLT = 0.25, GLD = 0.25 }
+
+[all-weather]
+weights = { SPY = 0.3, TLT = 0.4, IEF = 0.15, GLD = 0.075, DBC = 0.075 }
+
+[global-equity]
+weights = { SPY = 0.5, EFA = 0.3, EEM = 0.2 }

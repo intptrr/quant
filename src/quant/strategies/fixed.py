@@ -1,16 +1,5 @@
-import tomllib
-from pathlib import Path
-from typing import Protocol
-
 import polars as pl
 from pydantic import BaseModel, ConfigDict, Field
-
-
-class Strategy(Protocol):
-    @property
-    def symbols(self) -> list[str]: ...
-
-    def targets(self, prices: pl.DataFrame) -> pl.DataFrame: ...
 
 
 class FixedWeights(BaseModel):
@@ -32,7 +21,3 @@ class FixedWeights(BaseModel):
             .with_columns((pl.col("weight").abs() * self.rebalance_band).alias("band"))
             .sort("date", "symbol")
         )
-
-
-def load_strategy(path: Path) -> FixedWeights:
-    return FixedWeights.model_validate(tomllib.loads(path.read_text()))
