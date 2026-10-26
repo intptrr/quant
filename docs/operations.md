@@ -2,8 +2,8 @@
 
 ## Brokers
 
-The strategy named in `configs/trading.toml` (`strategy = "spy"`, defined in `configs/strategies/`) trades at the
-opening auction through one broker at a time:
+The strategy named in `configs/trading.toml` (`strategy = "sixty-forty"`, defined in `configs/strategies/`) trades
+at the opening auction through one broker at a time:
 
 - **IBKR** (the default, `broker = "ibkr"` in `configs/trading.toml`): the intended live venue, IBKR Pro Tiered pricing.
 - **Alpaca**: a commission-free paper account that needs no local software, handy for quick tests.

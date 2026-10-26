@@ -1,5 +1,5 @@
 broker = "ibkr"
-strategy = "spy"
+strategy = "sixty-forty"
 capital = 100000
 min_order_value = 1000
 max_order_fraction = 1.0

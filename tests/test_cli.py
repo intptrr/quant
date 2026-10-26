@@ -196,9 +196,10 @@ def test_paper_trades_the_strategy_named_in_the_trading_config(
     monkeypatch.setattr("quant.cli.sharadar_provider", lambda settings: None)
     monkeypatch.setattr("quant.cli._broker", lambda settings, name: FakeBroker())
     monkeypatch.setattr("quant.cli.broker_check", check)
+    Path("trading.toml").write_text('strategy = "spy"\n\n[brokers.ibkr]\n')
 
-    runner.invoke(app, ["paper", "check", "--trading", str(TRADING)])
-    runner.invoke(app, ["paper", "check", "--strategy", "ief", "--trading", str(TRADING)])
+    runner.invoke(app, ["paper", "check", "--trading", "trading.toml"])
+    runner.invoke(app, ["paper", "check", "--strategy", "ief", "--trading", "trading.toml"])
 
     assert traded == ["SPY", "IEF"]
 

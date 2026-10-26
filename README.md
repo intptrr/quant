@@ -1,7 +1,7 @@
 # quant
 
 A personal system for US ETF portfolios: daily data, a backtest, and paper trading at the opening auction through
-IBKR or Alpaca. A strategy turns prices into target weights; the default is a placeholder that holds 100% SPY.
+IBKR or Alpaca. A strategy turns prices into target weights; paper trading runs a 60/40 SPY/IEF portfolio.
 
 ## Setup
 
@@ -23,8 +23,8 @@ uv run quant paper pre-open --dry-run  # orders for the next opening auction, no
 ```
 
 `data` and `backtest` take strategy names or patterns as arguments and default to all strategies. `paper` commands
-trade the strategy named in `configs/trading.toml` (`strategy = "spy"`) unless `--strategy` names another. Every
-command reads `configs/trading.toml` unless `--trading` points elsewhere.
+trade the strategy named in `configs/trading.toml` (`strategy = "sixty-forty"`) unless `--strategy` names another.
+Every command reads `configs/trading.toml` unless `--trading` points elsewhere.
 
 ## Strategies
 
